@@ -1,0 +1,10 @@
+{
+  "clientId": "REPLACE-WITH-AZURE-APP-CLIENT-ID",
+  "tenantId": "REPLACE-WITH-TENANT-ID",
+  "siteHostname": "contoso.sharepoint.com",
+  "sitePath": "/sites/ContactCenter",
+  "listName": "BreakLog",
+  "teams": ["Sales", "Support", "Tech", "Billing", "Collections"],
+  "adminEmails": ["admin@contoso.com"],
+  "managerEmails": ["floor.manager@contoso.com"]
+}

@@ -1,0 +1,27 @@
+# Tool artifacts
+.claude/
+
+# Dependencies
+node_modules/
+*/node_modules/
+
+# Build output
+dist/
+build/
+client/dist/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+npm-debug.log*
+
+# Runtime data
+server/data/
+
+# OS
+.DS_Store
+Thumbs.db
