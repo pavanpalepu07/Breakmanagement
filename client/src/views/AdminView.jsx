@@ -1,7 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { format, parseISO, subDays } from 'date-fns';
 
-const TEAMS = ['', 'Sales', 'Support', 'Tech', 'Billing', 'Collections'];
+import { getConfig } from '../config.js';
+import { computeStats, downloadCsv, filterBreaks, getHistory } from '../breaks.js';
+
+const TEAMS = ['', ...getConfig().teams];
 const BREAK_TYPES = [
   { value: '', label: 'All Types' },
   { value: 'qbb', label: 'QBB' },
@@ -104,31 +107,13 @@ export default function AdminView() {
   const [error, setError] = useState('');
   const [page, setPage] = useState(1);
 
-  function buildParams() {
-    const params = new URLSearchParams();
-    if (from) params.set('from', from);
-    if (to) params.set('to', to);
-    if (teamFilter) params.set('team', teamFilter);
-    if (breakTypeFilter) params.set('breakType', breakTypeFilter);
-    return params;
-  }
-
   const fetchBreaks = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      const params = buildParams();
-      const [histRes, statsRes] = await Promise.all([
-        fetch(`/api/breaks/history?${params.toString()}`),
-        fetch(`/api/breaks/stats?${params.toString()}`),
-      ]);
-      if (!histRes.ok) throw new Error('Failed to fetch breaks');
-      if (!statsRes.ok) throw new Error('Failed to fetch stats');
-
-      const histData = await histRes.json();
-      const statsData = await statsRes.json();
-      setBreaks(histData);
-      setStats(statsData);
+      const data = filterBreaks(await getHistory({ from, to }), { team: teamFilter, breakType: breakTypeFilter });
+      setBreaks(data);
+      setStats(computeStats(data));
       setPage(1);
     } catch (err) {
       setError('Failed to load data. Please try again.');
@@ -152,8 +137,7 @@ export default function AdminView() {
   const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   function handleExportCSV() {
-    const params = buildParams();
-    window.open(`/api/breaks/export?${params.toString()}`, '_blank');
+    downloadCsv(filtered);
   }
 
   function handleApplyFilters(e) {

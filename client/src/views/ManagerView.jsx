@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { format, parseISO, differenceInSeconds } from 'date-fns';
+import { getActiveBreaks } from '../breaks.js';
 
 const BREAK_TYPE_LABELS = {
   qbb: 'QBB',
@@ -158,9 +159,7 @@ export default function ManagerView() {
 
   const fetchActive = useCallback(async () => {
     try {
-      const res = await fetch('/api/breaks/active');
-      if (!res.ok) throw new Error('Failed to fetch active breaks');
-      const data = await res.json();
+      const data = await getActiveBreaks();
       setActiveBreaks(data);
       setLastRefresh(new Date());
       setError('');

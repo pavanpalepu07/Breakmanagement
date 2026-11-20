@@ -1,7 +1,11 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { format, parseISO, differenceInSeconds } from 'date-fns';
+import { useAuth } from '../auth.jsx';
+import { getConfig } from '../config.js';
+import { endBreak, getTodayBreaks, startBreak } from '../breaks.js';
 
-const TEAMS = ['Sales', 'Support', 'Tech', 'Billing', 'Collections'];
+const TEAMS = getConfig().teams;
+
 
 const BREAK_TYPES = [
   { id: 'qbb', label: 'QBB', sublabel: 'Quick Bio Break', limit: 5, color: 'blue' },
@@ -14,10 +18,6 @@ const BREAK_TYPE_MAP = {
   short: { label: 'Short Break', limitMinutes: 15 },
   lunch: { label: 'Lunch/Dinner', limitMinutes: 30 },
 };
-
-function makeAgentId(name, team) {
-  return `${name.trim().toLowerCase().replace(/\s+/g, '-')}-${team.toLowerCase()}`;
-}
 
 function formatElapsed(seconds) {
   const m = Math.floor(seconds / 60);
@@ -42,11 +42,10 @@ function StatusBadge({ status }) {
 }
 
 export default function AgentView() {
-  const [savedName, setSavedName] = useState(() => localStorage.getItem('bm_agent_name') || '');
+  const { email: agentId, name: savedName } = useAuth();
   const [savedTeam, setSavedTeam] = useState(() => localStorage.getItem('bm_agent_team') || '');
-  const [nameInput, setNameInput] = useState('');
   const [teamInput, setTeamInput] = useState(TEAMS[0]);
-  const [isIdentified, setIsIdentified] = useState(false);
+  const isIdentified = !!savedTeam;
 
   const [activeBreak, setActiveBreak] = useState(null);
   const [todayBreaks, setTodayBreaks] = useState([]);
@@ -55,21 +54,10 @@ export default function AgentView() {
   const [error, setError] = useState('');
   const [startingBreak, setStartingBreak] = useState('');
 
-  const agentId = savedName && savedTeam ? makeAgentId(savedName, savedTeam) : null;
-
-  // On mount, check if we have saved identity
-  useEffect(() => {
-    if (savedName && savedTeam) {
-      setIsIdentified(true);
-    }
-  }, []);
-
   const fetchTodayBreaks = useCallback(async () => {
     if (!agentId) return;
     try {
-      const res = await fetch(`/api/breaks/agent/${encodeURIComponent(agentId)}/today`);
-      if (!res.ok) throw new Error('Failed to fetch breaks');
-      const data = await res.json();
+      const data = await getTodayBreaks(agentId);
       setTodayBreaks(data);
       // Find active break
       const active = data.find(b => !b.endTime);
@@ -104,29 +92,13 @@ export default function AgentView() {
 
   function handleSetIdentity(e) {
     e.preventDefault();
-    const name = nameInput.trim();
-    if (!name) {
-      setError('Please enter your name.');
-      return;
-    }
-    setSavedName(name);
     setSavedTeam(teamInput);
-    localStorage.setItem('bm_agent_name', name);
     localStorage.setItem('bm_agent_team', teamInput);
-    setIsIdentified(true);
-    setError('');
   }
 
-  function handleClearIdentity() {
-    setSavedName('');
+  function handleChangeTeam() {
     setSavedTeam('');
-    localStorage.removeItem('bm_agent_name');
     localStorage.removeItem('bm_agent_team');
-    setIsIdentified(false);
-    setActiveBreak(null);
-    setTodayBreaks([]);
-    setNameInput('');
-    setTeamInput(TEAMS[0]);
   }
 
   async function handleStartBreak(breakType) {
@@ -135,25 +107,11 @@ export default function AgentView() {
     setLoading(true);
     setError('');
     try {
-      const res = await fetch('/api/breaks/start', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          agentId,
-          agentName: savedName,
-          team: savedTeam,
-          breakType,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setError(data.error || 'Failed to start break');
-        return;
-      }
-      setActiveBreak(data);
+      const created = await startBreak({ email: agentId, name: savedName, team: savedTeam, breakType });
+      setActiveBreak(created);
       await fetchTodayBreaks();
     } catch (err) {
-      setError('Network error. Please try again.');
+      setError(err.message || 'Failed to start break');
     } finally {
       setLoading(false);
       setStartingBreak('');
@@ -165,20 +123,11 @@ export default function AgentView() {
     setLoading(true);
     setError('');
     try {
-      const res = await fetch('/api/breaks/end', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ breakId: activeBreak.id }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setError(data.error || 'Failed to end break');
-        return;
-      }
+      await endBreak(activeBreak);
       setActiveBreak(null);
       await fetchTodayBreaks();
     } catch (err) {
-      setError('Network error. Please try again.');
+      setError(err.message || 'Failed to end break');
     } finally {
       setLoading(false);
     }
@@ -192,7 +141,7 @@ export default function AgentView() {
           <div className="text-center mb-6">
             <div className="text-5xl mb-3">☕</div>
             <h1 className="text-2xl font-bold text-gray-900">Break Management</h1>
-            <p className="text-gray-500 mt-1 text-sm">Enter your details to get started</p>
+            <p className="text-gray-500 mt-1 text-sm">Welcome, {savedName}. Pick your team to get started</p>
           </div>
 
           <form onSubmit={handleSetIdentity} className="space-y-4">
@@ -201,19 +150,6 @@ export default function AgentView() {
                 {error}
               </div>
             )}
-
-            <div>
-              <label className="label">Your Name</label>
-              <input
-                className="input"
-                type="text"
-                value={nameInput}
-                onChange={e => setNameInput(e.target.value)}
-                placeholder="Enter your full name"
-                required
-                autoFocus
-              />
-            </div>
 
             <div>
               <label className="label">Team</label>
@@ -268,10 +204,10 @@ export default function AgentView() {
           <span className="badge badge-blue mt-1">{savedTeam}</span>
         </div>
         <button
-          onClick={handleClearIdentity}
+          onClick={handleChangeTeam}
           className="btn-secondary text-xs"
         >
-          Switch Agent
+          Change Team
         </button>
       </div>
 

@@ -12,11 +12,13 @@ import {
   ReferenceLine,
   Cell,
 } from 'recharts';
+import { useAuth } from '../auth.jsx';
+import { getConfig } from '../config.js';
+import { BREAK_LIMITS, BREAK_TYPE_LABELS, computeStats, filterBreaks, getHistory } from '../breaks.js';
 
-const TEAMS = ['', 'Sales', 'Support', 'Tech', 'Billing', 'Collections'];
+const TEAMS = getConfig().teams;
 
-const BREAK_TYPE_LABELS = { qbb: 'QBB', short: 'Short Break', lunch: 'Lunch/Dinner' };
-const BREAK_LIMITS = { qbb: 5, short: 15, lunch: 30 };
+
 
 const CHART_COLORS = {
   qbb: '#3b82f6',
@@ -54,9 +56,11 @@ const CustomBarTooltip = ({ active, payload, label }) => {
 };
 
 export default function DashboardView() {
+  const { email, role } = useAuth();
+  const isAgent = role === 'agent';
   const [from, setFrom] = useState(toLocalDateString(subDays(new Date(), 6)));
   const [to, setTo] = useState(toLocalDateString(new Date()));
-  const [agentFilter, setAgentFilter] = useState('');
+  const [agentFilter, setAgentFilter] = useState(isAgent ? email : '');
   const [teamFilter, setTeamFilter] = useState('');
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -66,37 +70,23 @@ export default function DashboardView() {
     setLoading(true);
     setError('');
     try {
-      const params = new URLSearchParams();
-      if (from) params.set('from', from);
-      if (to) params.set('to', to);
-      if (agentFilter) params.set('agentId', agentFilter);
-      if (teamFilter) params.set('team', teamFilter);
-
-      const res = await fetch(`/api/breaks/stats?${params.toString()}`);
-      if (!res.ok) throw new Error('Failed to fetch stats');
-      const data = await res.json();
-      setStats(data);
+      const agentId = isAgent ? email : agentFilter;
+      const data = await getHistory({ from, to, agentId });
+      setStats(computeStats(filterBreaks(data, { team: teamFilter })));
     } catch (err) {
       setError('Failed to load dashboard data.');
     } finally {
       setLoading(false);
     }
-  }, [from, to, agentFilter, teamFilter]);
+  }, [from, to, agentFilter, teamFilter, isAgent, email]);
 
   useEffect(() => {
     fetchStats();
   }, [fetchStats]);
 
-  // Autofill from localStorage agent
-  const savedName = localStorage.getItem('bm_agent_name') || '';
-  const savedTeam = localStorage.getItem('bm_agent_team') || '';
-
   function applyMyHistory() {
-    if (savedName && savedTeam) {
-      const agentId = `${savedName.trim().toLowerCase().replace(/\s+/g, '-')}-${savedTeam.toLowerCase()}`;
-      setAgentFilter(agentId);
-      setTeamFilter('');
-    }
+    setAgentFilter(email);
+    setTeamFilter('');
   }
 
   // Chart data
@@ -145,7 +135,7 @@ export default function DashboardView() {
       {/* Header */}
       <div>
         <h1 className="text-2xl font-bold text-gray-900">Historical Dashboard</h1>
-        <p className="text-sm text-gray-500 mt-0.5">Analytics and trends for break activity</p>
+        <p className="text-sm text-gray-500 mt-0.5">{isAgent ? 'Your personal break history and trends' : 'Analytics and trends for break activity'}</p>
       </div>
 
       {/* Filters */}
@@ -180,18 +170,18 @@ export default function DashboardView() {
               onChange={e => setTeamFilter(e.target.value)}
             >
               <option value="">All Teams</option>
-              {TEAMS.filter(Boolean).map(t => (
+              {TEAMS.map(t => (
                 <option key={t} value={t}>{t}</option>
               ))}
             </select>
           </div>
           <div className="flex gap-2">
-            {savedName && (
+            {!isAgent && (
               <button onClick={applyMyHistory} className="btn-secondary text-xs">
                 My History
               </button>
             )}
-            {agentFilter && (
+            {!isAgent && agentFilter && (
               <button
                 onClick={() => setAgentFilter('')}
                 className="btn-secondary text-xs"
@@ -206,7 +196,7 @@ export default function DashboardView() {
         </div>
         {agentFilter && (
           <div className="mt-3 text-xs text-blue-600 bg-blue-50 rounded px-3 py-1.5 inline-block">
-            Filtered to agent: <strong>{agentFilter}</strong>
+            {isAgent ? 'Showing your own break history' : <>Filtered to agent: <strong>{agentFilter}</strong></>}
           </div>
         )}
       </div>
